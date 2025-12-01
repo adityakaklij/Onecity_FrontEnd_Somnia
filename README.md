@@ -8,6 +8,14 @@ Frontend application for the decentralized city building game on Somnia blockcha
 
 </div>
 
+
+## Built with KIRO
+
+<div align="center">
+
+  <img src="images/kiro.png" alt="OneCity.space Overview" width="700"/>
+
+</div>
 ## 🔗 Project Links
 
 - **Official Landing Page:** [onecity.space](https://www.onecity.space/)
