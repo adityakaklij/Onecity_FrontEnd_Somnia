@@ -26,13 +26,6 @@ This frontend application provides a 3D first-person city building experience wh
 
 ## 🔗 Blockchain Interactions
 
-### Authentication & Wallet Connection
-
-<div align="center" style="border: 2px solid #b58f8fff; padding: 10px; display: inline-block;">
-
-  <img src="images/auth.png" alt="OneCity.space Authentication" width="600"/>
-
-</div>
 
 The application supports wallet connections via:
 - **MetaMask** - Industry-standard Ethereum wallet for seamless Web3 integration
