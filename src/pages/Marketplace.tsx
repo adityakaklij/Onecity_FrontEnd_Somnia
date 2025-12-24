@@ -160,8 +160,11 @@ const Marketplace = () => {
 
     try {
       // Create and send transaction (EVM - transaction is sent immediately)
-      // For EVM, landId should be a number
-      const landId = typeof listing.listing_id === 'string' ? parseInt(listing.listing_id) : listing.listing_id;
+      // Use the actual contract landId stored in land_data_object_id (this is the incremental ID from minting)
+      const landId = listing.land_data_object_id;
+      if (!landId) {
+        throw new Error('Listing does not have a valid contract landId');
+      }
       const tx = await createPurchaseListingTransaction(landId);
 
       toast({

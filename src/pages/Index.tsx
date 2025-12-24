@@ -564,9 +564,11 @@ const Index = () => {
 
     try {
       // Create and execute permit application transaction (EVM - transaction is sent immediately)
-      // Note: For EVM, landId should be a number, not landDataObjectId
-      // We'll need to extract or convert landId from land.landDataObjectId or use land.id
-      const landId = parseInt(land.id.split('-')[0]) * 1000 + parseInt(land.id.split('-')[1]) || land.id;
+      // Use the actual contract landId stored in landDataObjectId (this is the incremental ID from minting)
+      const landId = land.landDataObjectId;
+      if (!landId) {
+        throw new Error('Land does not have a valid contract landId');
+      }
       const tx = await createApplyPermitTransaction(description, landId);
 
       toast({
@@ -987,8 +989,11 @@ const Index = () => {
 
     try {
       // Create and execute list for sale transaction (EVM - transaction is sent immediately)
-      // Note: For EVM, landId should be a number, not landDataObjectId
-      const landId = parseInt(land.id.split('-')[0]) * 1000 + parseInt(land.id.split('-')[1]) || land.id;
+      // Use the actual contract landId stored in landDataObjectId (this is the incremental ID from minting)
+      const landId = land.landDataObjectId;
+      if (!landId) {
+        throw new Error('Land does not have a valid contract landId');
+      }
       const tx = await createListForSaleTransaction(landId, price);
 
       toast({
