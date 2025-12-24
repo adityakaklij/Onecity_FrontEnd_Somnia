@@ -172,7 +172,10 @@ const Voting = () => {
     }
 
     // Check if user is the owner
-    if (permit.owner_wallet_address === accountAddress) {
+    // Normalize addresses to lowercase for comparison
+    const normalizedPermitAddress = (permit.owner_wallet_address || '').toLowerCase().trim();
+    const normalizedAccountAddress = (accountAddress || '').toLowerCase().trim();
+    if (normalizedPermitAddress === normalizedAccountAddress) {
       toast({
         title: "Cannot Vote",
         description: "You cannot vote on your own permit.",
@@ -479,7 +482,7 @@ const Voting = () => {
               const userVote = userVotes[permit.permit_id];
               const canVote = accountAddress && 
                              !userVote && 
-                             permit.owner_wallet_address !== accountAddress &&
+                             (permit.owner_wallet_address || '').toLowerCase().trim() !== (accountAddress || '').toLowerCase().trim() &&
                              permit.status === 'pending';
               const canApprove = permit.status === 'pending' && 
                                 permit.upvotes >= permit.minimum_upvotes;

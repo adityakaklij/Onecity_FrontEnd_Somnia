@@ -189,6 +189,7 @@ const Index = () => {
         // Load all plots from database to get landDataObjectId for billboard lands
         // We need this to load advertising listings even for plots owned by others
         // Use type assertion to bypass TypeScript strict checking
+        // Note: We load all plots here, so no need for case-insensitive filtering
         const { data: allPlots, error } = await (supabase as any)
           .from('plots_2' as any)
           .select('land_id, land_data_object_id, owner_wallet_address, rtokens, transaction_digest');
@@ -205,7 +206,10 @@ const Index = () => {
             const updatedLands = prevLands.map(land => {
               const plotData = allPlots.find((p: any) => p.land_id === land.id);
               if (plotData) {
-                const isOwnedByPlayer = accountAddress && plotData.owner_wallet_address === accountAddress;
+                // Normalize addresses to lowercase for comparison
+                const normalizedAccountAddress = accountAddress?.toLowerCase().trim() || '';
+                const normalizedPlotAddress = (plotData.owner_wallet_address || '').toLowerCase().trim();
+                const isOwnedByPlayer = normalizedAccountAddress && normalizedPlotAddress === normalizedAccountAddress;
                 // Mark as owned if there's an owner (either by player or someone else)
                 const isOwned = !!plotData.owner_wallet_address;
                 const newOwner: 'player' | 'other' | null = isOwnedByPlayer ? 'player' : (isOwned ? 'other' : null);
@@ -215,9 +219,12 @@ const Index = () => {
                 const plotRtokens = plotData.rtokens !== null && plotData.rtokens !== undefined ? plotData.rtokens : 0;
                 const currentRtokens = land.rtokens !== null && land.rtokens !== undefined ? land.rtokens : 0;
                 
+                // Normalize for comparison
+                const normalizedLandAddress = (land.ownerWalletAddress || '').toLowerCase().trim();
+                
                 if (
                   land.owner !== newOwner ||
-                  land.ownerWalletAddress !== plotData.owner_wallet_address ||
+                  normalizedLandAddress !== normalizedPlotAddress ||
                   land.landDataObjectId !== plotData.land_data_object_id ||
                   currentRtokens !== plotRtokens
                 ) {
@@ -584,7 +591,22 @@ const Index = () => {
       }
 
       // Update RTOKEN balance for this specific plot
-      await updatePlotRTokenBalance(land.landDataObjectId, newPlotBalance);
+      const updateResult = await updatePlotRTokenBalance(land.landDataObjectId, newPlotBalance);
+      
+      if (!updateResult.success) {
+        throw new Error('Failed to update RTOKEN balance in database');
+      }
+
+      // Reload plot from database to ensure we have the latest data
+      const reloadedPlot = await loadPlotByLandId(land.id);
+      
+      // Update local state with new RTOKEN balance
+      setLands(prev => prev.map(l => 
+        l.id === land.id ? { 
+          ...l, 
+          rtokens: reloadedPlot?.rtokens ?? updateResult.updatedRtokens ?? newPlotBalance
+        } : l
+      ));
       
       // Recalculate total RTOKENs
       const newTotalBalance = await getTotalRTokenBalance(accountAddress);
@@ -1374,6 +1396,8 @@ const Index = () => {
             // Transfer RTOKENs: deduct from advertiser's plots, add to owner
             // Deduct from user's plots (distribute across plots if needed)
             let remainingToDeduct = price;
+            const updatedUserPlots: { landId: string; newRtokens: number }[] = [];
+            
             for (const plot of userPlots) {
               if (remainingToDeduct <= 0) break;
               const currentRtokens = plot.rtokens || 0;
@@ -1381,29 +1405,61 @@ const Index = () => {
                 const deduction = Math.min(remainingToDeduct, currentRtokens);
                 const newBalance = currentRtokens - deduction;
                 remainingToDeduct -= deduction;
-                await updatePlotRTokenBalance(plot.landDataObjectId!, newBalance);
+                const updateResult = await updatePlotRTokenBalance(plot.landDataObjectId!, newBalance);
+                if (updateResult.success) {
+                  updatedUserPlots.push({
+                    landId: plot.landId,
+                    newRtokens: updateResult.updatedRtokens ?? newBalance,
+                  });
+                }
               }
             }
 
             // Add to owner's balance - use database function
+            let ownerPlotUpdated = false;
             if (land.ownerWalletAddress) {
               // Get owner's plots and add to first one
               const ownerPlots = await loadPlotsByWallet(land.ownerWalletAddress);
               if (ownerPlots.length > 0) {
                 const firstPlot = ownerPlots[0];
                 const currentRtokens = firstPlot.rtokens || 0;
-                await updatePlotRTokenBalance(firstPlot.landDataObjectId, currentRtokens + price);
+                const updateResult = await updatePlotRTokenBalance(firstPlot.landDataObjectId, currentRtokens + price);
+                if (updateResult.success) {
+                  ownerPlotUpdated = true;
+                  // Update owner's plot in local state if it's visible
+                  setLands(prev => prev.map(l => {
+                    if (l.landDataObjectId === firstPlot.landDataObjectId) {
+                      return {
+                        ...l,
+                        rtokens: updateResult.updatedRtokens ?? (currentRtokens + price),
+                      };
+                    }
+                    return l;
+                  }));
+                }
               }
             }
 
-            // Update local state
-            setLands(prev => prev.map(l => 
-              l.id === land.id ? {
-                ...l,
-                advertisingImageUrl: imageUrl,
-                advertisingListing: undefined,
-              } : l
-            ));
+            // Update local state for user's plots and billboard
+            setLands(prev => prev.map(l => {
+              // Update user's plots with new RTOKEN balances
+              const userPlotUpdate = updatedUserPlots.find(up => up.landId === l.id);
+              if (userPlotUpdate) {
+                return {
+                  ...l,
+                  rtokens: userPlotUpdate.newRtokens,
+                };
+              }
+              // Update billboard land
+              if (l.id === land.id) {
+                return {
+                  ...l,
+                  advertisingImageUrl: imageUrl,
+                  advertisingListing: undefined,
+                };
+              }
+              return l;
+            }));
 
             // Update total RTOKENs
             const newTotal = await getTotalRTokenBalance(accountAddress);

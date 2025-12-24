@@ -17,6 +17,14 @@ const MARKETPLACE_TRANSACTIONS_TABLE = 'marketplace_transactions_2';
 const BILLBOARD_ADVERTISING_TABLE = 'billboard_advertising_2';
 const BILLBOARD_TRANSACTIONS_TABLE = 'billboard_transactions_2';
 
+/**
+ * Normalize wallet address to lowercase for consistent comparisons
+ */
+const normalizeWalletAddress = (address: string | null | undefined): string => {
+  if (!address) return '';
+  return address.toLowerCase().trim();
+};
+
 // Initialize database tables (run this once or in migration)
 export const initializeDatabase = async () => {
   // Note: This assumes tables are created via Supabase dashboard or migrations
@@ -134,9 +142,12 @@ export interface PlotPurchaseData {
 
 export const savePlotPurchase = async (plotData: PlotPurchaseData): Promise<boolean> => {
   try {
+    // Normalize wallet address to lowercase
+    const normalizedAddress = normalizeWalletAddress(plotData.ownerWalletAddress);
+    
     console.log('Saving plot purchase to database:', {
       landId: plotData.landId,
-      ownerWalletAddress: plotData.ownerWalletAddress,
+      ownerWalletAddress: normalizedAddress,
       landDataObjectId: plotData.landDataObjectId,
       transactionDigest: plotData.transactionDigest,
       rtokens: plotData.rtokens,
@@ -153,7 +164,7 @@ export const savePlotPurchase = async (plotData: PlotPurchaseData): Promise<bool
         land_id: plotData.landId,
         x_coordinate: plotData.x,
         y_coordinate: plotData.y,
-        owner_wallet_address: plotData.ownerWalletAddress,
+        owner_wallet_address: normalizedAddress,
         land_data_object_id: plotData.landDataObjectId,
         transaction_digest: plotData.transactionDigest,
         rtokens: rtokensValue,
@@ -192,10 +203,14 @@ export const savePlotPurchase = async (plotData: PlotPurchaseData): Promise<bool
  */
 export const loadPlotsByWallet = async (walletAddress: string): Promise<PlotPurchaseData[]> => {
   try {
-    const { data, error } = await supabase
-      .from(PLOTS_TABLE)
+    // Normalize wallet address to lowercase for comparison
+    const normalizedAddress = normalizeWalletAddress(walletAddress);
+    
+    // Use filter with ilike for case-insensitive matching (works with existing mixed-case data in DB)
+    const { data, error } = await (supabase as any)
+      .from(PLOTS_TABLE as any)
       .select('*')
-      .eq('owner_wallet_address', walletAddress)
+      .filter('owner_wallet_address', 'ilike', normalizedAddress)
       .order('purchased_at', { ascending: false });
 
     if (error) {
@@ -260,10 +275,14 @@ export const loadPlotByLandId = async (landId: string): Promise<PlotPurchaseData
  */
 export const getTotalRTokenBalance = async (walletAddress: string): Promise<number> => {
   try {
-    const { data, error } = await supabase
-      .from(PLOTS_TABLE)
+    // Normalize wallet address to lowercase for comparison
+    const normalizedAddress = normalizeWalletAddress(walletAddress);
+    
+    // Use filter with ilike for case-insensitive matching (works with existing mixed-case data in DB)
+    const { data, error } = await (supabase as any)
+      .from(PLOTS_TABLE as any)
       .select('rtokens')
-      .eq('owner_wallet_address', walletAddress);
+      .filter('owner_wallet_address', 'ilike', normalizedAddress);
 
     if (error) {
       console.error('Error getting RTOKEN balance:', error);
@@ -284,22 +303,36 @@ export const getTotalRTokenBalance = async (walletAddress: string): Promise<numb
 export const updatePlotRTokenBalance = async (
   landDataObjectId: string,
   newBalance: number
-): Promise<boolean> => {
+): Promise<{ success: boolean; updatedRtokens?: number }> => {
   try {
-    const { error } = await supabase
-      .from(PLOTS_TABLE)
+    const { data, error } = await (supabase as any)
+      .from(PLOTS_TABLE as any)
       .update({ rtokens: newBalance })
-      .eq('land_data_object_id', landDataObjectId);
+      .eq('land_data_object_id', landDataObjectId)
+      .select('rtokens')
+      .single();
 
     if (error) {
       console.error('Error updating RTOKEN balance:', error);
-      return false;
+      console.error('Error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      return { success: false };
     }
 
-    return true;
+    console.log('✅ RTOKEN balance updated successfully:', {
+      landDataObjectId,
+      newBalance,
+      updatedRtokens: data?.rtokens,
+    });
+
+    return { success: true, updatedRtokens: data?.rtokens || newBalance };
   } catch (error) {
     console.error('Exception updating RTOKEN balance:', error);
-    return false;
+    return { success: false };
   }
 };
 
@@ -329,10 +362,13 @@ export interface PermitData {
  */
 export const savePermit = async (permitData: PermitData): Promise<{ id: string; permitId: number } | null> => {
   try {
+    // Normalize wallet address to lowercase
+    const normalizedAddress = normalizeWalletAddress(permitData.ownerWalletAddress);
+    
     const insertData: any = {
       land_id: permitData.landId,
       land_data_object_id: permitData.landDataObjectId,
-      owner_wallet_address: permitData.ownerWalletAddress,
+      owner_wallet_address: normalizedAddress,
       description: permitData.description,
       building_type: permitData.buildingType,
       floors: permitData.floors,
@@ -423,8 +459,12 @@ export const loadAllPermits = async (): Promise<any[]> => {
  */
 export const loadPermitsByWallet = async (walletAddress: string): Promise<any[]> => {
   try {
-    const { data, error } = await supabase
-      .from(PERMITS_TABLE)
+    // Normalize wallet address to lowercase for comparison
+    const normalizedAddress = normalizeWalletAddress(walletAddress);
+    
+    // Use filter with ilike for case-insensitive matching (works with existing mixed-case data in DB)
+    const { data, error } = await (supabase as any)
+      .from(PERMITS_TABLE as any)
       .select(`
         *,
         permit_votes_2 (
@@ -433,7 +473,7 @@ export const loadPermitsByWallet = async (walletAddress: string): Promise<any[]>
           created_at
         )
       `)
-      .eq('owner_wallet_address', walletAddress)
+      .filter('owner_wallet_address', 'ilike', normalizedAddress)
       .order('submitted_at', { ascending: false });
 
     if (error) {
@@ -494,6 +534,9 @@ export const savePermitVote = async (
   transactionDigest: string
 ): Promise<boolean> => {
   try {
+    // Normalize wallet address to lowercase
+    const normalizedAddress = normalizeWalletAddress(voterWalletAddress);
+    
     // First, get the permit UUID from permit_id (sequential integer)
     const permit = await loadPermitById(permitId);
     if (!permit) {
@@ -501,12 +544,12 @@ export const savePermitVote = async (
       return false;
     }
 
-    // Check if user already voted
-    const { data: existingVote } = await supabase
-      .from(PERMIT_VOTES_TABLE)
+    // Check if user already voted - use filter with ilike for case-insensitive matching
+    const { data: existingVote } = await (supabase as any)
+      .from(PERMIT_VOTES_TABLE as any)
       .select('*')
       .eq('permit_id', permit.id)
-      .eq('voter_wallet_address', voterWalletAddress)
+      .filter('voter_wallet_address', 'ilike', normalizedAddress)
       .single();
 
     if (existingVote) {
@@ -515,11 +558,11 @@ export const savePermitVote = async (
     }
 
     // Save vote
-    const { error: voteError } = await supabase
-      .from(PERMIT_VOTES_TABLE)
+    const { error: voteError } = await (supabase as any)
+      .from(PERMIT_VOTES_TABLE as any)
       .insert({
         permit_id: permit.id,
-        voter_wallet_address: voterWalletAddress,
+        voter_wallet_address: normalizedAddress,
         vote_type: voteType,
         transaction_digest: transactionDigest,
       });
@@ -648,16 +691,20 @@ export const getUserVote = async (
   voterWalletAddress: string
 ): Promise<'upvote' | 'downvote' | null> => {
   try {
+    // Normalize wallet address to lowercase for comparison
+    const normalizedAddress = normalizeWalletAddress(voterWalletAddress);
+    
     const permit = await loadPermitById(permitId);
     if (!permit) {
       return null;
     }
 
-    const { data, error } = await supabase
-      .from(PERMIT_VOTES_TABLE)
+    // Use filter with ilike for case-insensitive matching
+    const { data, error } = await (supabase as any)
+      .from(PERMIT_VOTES_TABLE as any)
       .select('vote_type')
       .eq('permit_id', permit.id)
-      .eq('voter_wallet_address', voterWalletAddress)
+      .filter('voter_wallet_address', 'ilike', normalizedAddress)
       .single();
 
     if (error || !data) {
@@ -691,13 +738,16 @@ export interface ListingData {
  */
 export const saveListing = async (listingData: ListingData): Promise<string | null> => {
   try {
-    const { data, error } = await supabase
-      .from(LISTINGS_TABLE)
+    // Normalize wallet address to lowercase
+    const normalizedAddress = normalizeWalletAddress(listingData.sellerWalletAddress);
+    
+    const { data, error } = await (supabase as any)
+      .from(LISTINGS_TABLE as any)
       .insert({
         listing_id: listingData.listingId,
         land_id: listingData.landId,
         land_data_object_id: listingData.landDataObjectId,
-        seller_wallet_address: listingData.sellerWalletAddress,
+        seller_wallet_address: normalizedAddress,
         price: listingData.price,
         status: 'active',
         transaction_digest: listingData.transactionDigest,
@@ -826,7 +876,7 @@ export const updateListingStatus = async (
     if (status === 'sold') {
       updateData.sold_at = new Date().toISOString();
       if (buyerWalletAddress) {
-        updateData.buyer_wallet_address = buyerWalletAddress;
+        updateData.buyer_wallet_address = normalizeWalletAddress(buyerWalletAddress);
       }
       if (purchaseTransactionDigest) {
         updateData.purchase_transaction_digest = purchaseTransactionDigest;
@@ -946,10 +996,14 @@ export const updatePlotOwnership = async (
   transactionDigest: string
 ): Promise<boolean> => {
   try {
+    // Normalize wallet addresses to lowercase
+    const normalizedNewOwner = normalizeWalletAddress(newOwnerWalletAddress);
+    const normalizedOldOwner = normalizeWalletAddress(oldOwnerWalletAddress);
+    
     console.log('Updating plot ownership:', {
       landDataObjectId,
-      newOwnerWalletAddress,
-      oldOwnerWalletAddress,
+      newOwnerWalletAddress: normalizedNewOwner,
+      oldOwnerWalletAddress: normalizedOldOwner,
       price,
       transactionDigest,
     });
@@ -973,7 +1027,7 @@ export const updatePlotOwnership = async (
     const { error: updateError, data: updatedData } = await (supabase as any)
       .from(PLOTS_TABLE as any)
       .update({
-        owner_wallet_address: newOwnerWalletAddress,
+        owner_wallet_address: normalizedNewOwner,
         transaction_digest: transactionDigest,
         purchased_at: new Date().toISOString(),
         rtokens: 5000, // New owner gets 5000 rtokens (as per minting)
@@ -995,10 +1049,11 @@ export const updatePlotOwnership = async (
     console.log('Plot ownership updated successfully:', updatedData);
 
     // Deduct RTOKENs from buyer (deduct from their total across all plots)
+    // Use filter with ilike for case-insensitive matching
     const { data: buyerPlots } = await (supabase as any)
       .from(PLOTS_TABLE as any)
       .select('id, land_data_object_id, rtokens')
-      .eq('owner_wallet_address', newOwnerWalletAddress)
+      .filter('owner_wallet_address', 'ilike', normalizedNewOwner)
       .order('purchased_at', { ascending: false });
 
     if (buyerPlots && buyerPlots.length > 0) {
@@ -1017,19 +1072,21 @@ export const updatePlotOwnership = async (
           const newBalance = currentRtokens - deduction;
           remainingToDeduct -= deduction;
           
-          await (supabase as any)
-            .from(PLOTS_TABLE as any)
-            .update({ rtokens: newBalance })
-            .eq('id', plot.id);
+          // Use the proper update function with error handling
+          const updateResult = await updatePlotRTokenBalance(plot.land_data_object_id, newBalance);
+          if (!updateResult.success) {
+            console.error(`Failed to deduct RTOKENs from buyer plot ${plot.land_data_object_id}`);
+          }
         }
       }
     }
 
     // Add RTOKENs to seller (add to one of their existing plots, or create entry)
+    // Use filter with ilike for case-insensitive matching
     const { data: sellerPlots } = await (supabase as any)
       .from(PLOTS_TABLE as any)
-      .select('id, rtokens')
-      .eq('owner_wallet_address', oldOwnerWalletAddress)
+      .select('id, land_data_object_id, rtokens')
+      .filter('owner_wallet_address', 'ilike', normalizedOldOwner)
       .order('purchased_at', { ascending: false })
       .limit(1);
 
@@ -1037,10 +1094,10 @@ export const updatePlotOwnership = async (
       // Add to seller's first plot
       const sellerPlot = sellerPlots[0];
       const currentRtokens = sellerPlot.rtokens || 0;
-      await (supabase as any)
-        .from(PLOTS_TABLE as any)
-        .update({ rtokens: currentRtokens + price })
-        .eq('id', sellerPlot.id);
+      const updateResult = await updatePlotRTokenBalance(sellerPlot.land_data_object_id, currentRtokens + price);
+      if (!updateResult.success) {
+        console.error(`Failed to add RTOKENs to seller plot ${sellerPlot.land_data_object_id}`);
+      }
     } else {
       // If seller has no plots, we can't add rtokens (they sold their last plot)
       // This is fine - they received the payment
@@ -1071,13 +1128,16 @@ export interface AdvertisingListingData {
  */
 export const saveAdvertisingListing = async (listingData: AdvertisingListingData): Promise<string | null> => {
   try {
-    const { data, error } = await supabase
-      .from(BILLBOARD_ADVERTISING_TABLE)
+    // Normalize wallet address to lowercase
+    const normalizedAddress = normalizeWalletAddress(listingData.ownerWalletAddress);
+    
+    const { data, error } = await (supabase as any)
+      .from(BILLBOARD_ADVERTISING_TABLE as any)
       .insert({
         listing_id: listingData.listingId,
         land_id: listingData.landId,
         land_data_object_id: listingData.landDataObjectId,
-        owner_wallet_address: listingData.ownerWalletAddress,
+        owner_wallet_address: normalizedAddress,
         price: listingData.price,
         status: 'available',
         list_transaction_digest: listingData.transactionDigest,
@@ -1182,7 +1242,7 @@ export const updateAdvertisingStatus = async (
     if (status === 'leased') {
       updateData.leased_at = new Date().toISOString();
       if (advertiserWalletAddress) {
-        updateData.advertiser_wallet_address = advertiserWalletAddress;
+        updateData.advertiser_wallet_address = normalizeWalletAddress(advertiserWalletAddress);
       }
       if (imageUrl) {
         updateData.image_url = imageUrl;

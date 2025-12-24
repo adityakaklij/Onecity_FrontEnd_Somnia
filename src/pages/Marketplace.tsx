@@ -129,7 +129,10 @@ const Marketplace = () => {
     }
 
     // Check if user is the seller
-    if (listing.seller_wallet_address === evmAddress) {
+    // Normalize addresses to lowercase for comparison
+    const normalizedSellerAddress = (listing.seller_wallet_address || '').toLowerCase().trim();
+    const normalizedEvmAddress = (evmAddress || '').toLowerCase().trim();
+    if (normalizedSellerAddress === normalizedEvmAddress) {
       toast({
         title: "Cannot Purchase",
         description: "You cannot purchase your own listing.",
@@ -378,7 +381,7 @@ const Marketplace = () => {
               const ZoneIcon = getZoneIcon(listing.zone_type);
               const isPurchasing = purchasingListingId === listing.listing_id;
               const canPurchase = accountAddress && 
-                                 listing.seller_wallet_address !== accountAddress &&
+                                 (listing.seller_wallet_address || '').toLowerCase().trim() !== (accountAddress || '').toLowerCase().trim() &&
                                  totalRTokens >= listing.price;
 
               return (
@@ -425,7 +428,7 @@ const Marketplace = () => {
                       >
                         Connect Wallet to Purchase
                       </Button>
-                    ) : listing.seller_wallet_address === accountAddress ? (
+                    ) : (listing.seller_wallet_address || '').toLowerCase().trim() === (accountAddress || '').toLowerCase().trim() ? (
                       <Button
                         variant="outline"
                         className="w-full mt-4 bg-white/10 border-white/20 text-white hover:bg-white/20"
