@@ -2,7 +2,8 @@ import { Player } from '@/types/game';
 import { Wallet, Home, Building2, Factory, Sprout, Coins, Vote, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useEVMWallet } from '@/hooks/useEVMWallet';
+import { useToast } from '@/hooks/use-toast';
 
 interface GameHeaderProps {
   player: Player;
@@ -20,25 +21,25 @@ declare global {
 
 export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
   const navigate = useNavigate();
-  const [isWalletInstalled, setIsWalletInstalled] = useState(false);
-  const [account, setAccount] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { account, address, isConnected, connect: connectEVM, isConnecting } = useEVMWallet();
+  const isWalletInstalled = typeof window !== 'undefined' && !!window.ethereum;
 
-  useEffect(() => {
-    if (window.ethereum) {
-      setIsWalletInstalled(true);
-      connectWallet();
-    }
-  }, []);
-
-  const connectWallet = async () => {
-    window.ethereum
-      .request({ method: "eth_requestAccounts" })
-      .then((accounts: string[]) => {
-        setAccount(accounts[0]);
-      })
-      .catch((e: any) => {
-        alert(e);
+  const handleConnectWallet = async () => {
+    try {
+      await connectEVM();
+      toast({
+        title: "Wallet Connected",
+        description: "Your wallet has been connected successfully.",
       });
+    } catch (error: any) {
+      console.error('Error connecting wallet:', error);
+      toast({
+        title: "Connection Failed",
+        description: error.message || "Failed to connect wallet. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -64,7 +65,7 @@ export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
                 className="h-12 w-auto object-contain"
               />
             </div>
-            {account && (
+            {isConnected && address && (
               <div 
                 className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105"
                 style={{
@@ -129,7 +130,7 @@ export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
           
           {/* Right: Navigation and wallet cluster */}
           <div className="flex items-center gap-2">
-            {account && (
+            {isConnected && address && (
               <>
                 <Button
                   variant="ghost"
@@ -159,7 +160,7 @@ export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
                 </Button>
               </>
             )}
-            {account === null ? (
+            {!isConnected ? (
               <div 
                 className="rounded-xl transition-all duration-200 hover:scale-105 group"
                 style={{
@@ -177,10 +178,11 @@ export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
                   <Wallet className="w-4 h-4 text-blue-300 transition-all duration-200 group-hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
                   {isWalletInstalled ? (
                     <Button 
-                      onClick={connectWallet}
-                      className="bg-transparent text-white border-0 shadow-none hover:bg-transparent text-sm px-2 py-1 h-auto"
+                      onClick={handleConnectWallet}
+                      disabled={isConnecting}
+                      className="bg-transparent text-white border-0 shadow-none hover:bg-transparent text-sm px-2 py-1 h-auto disabled:opacity-50"
                     >
-                      Connect
+                      {isConnecting ? 'Connecting...' : 'Connect Wallet'}
                     </Button>
                   ) : (
                     <span className="text-xs text-white/80">Install MetaMask</span>
@@ -204,7 +206,7 @@ export const GameHeader = ({ totalRTokens }: GameHeaderProps) => {
                 >
                   <Wallet className="w-4 h-4 text-green-300 transition-all duration-200 group-hover:drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
                   <span className="text-xs text-white/90">
-                    {account.slice(0, 6)}...{account.slice(-4)}
+                    {address.slice(0, 6)}...{address.slice(-4)}
                   </span>
                 </div>
               </div>
